@@ -1,58 +1,14 @@
+use prettytable::{cell, row, Table};
 use reqwest::Result;
-use serde::Deserialize;
 use structopt::StructOpt;
+
+mod types;
+
+use types::{MatchHistory, Summoner};
 
 #[derive(StructOpt)]
 struct Cli {
     summoner_name: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all(deserialize = "camelCase"))]
-struct Summoner {
-    account_id: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all(deserialize = "camelCase"))]
-struct MatchHistory {
-    matches: Vec<Match>,
-}
-#[derive(Debug, Deserialize)]
-#[serde(rename_all(deserialize = "camelCase"))]
-struct Match {
-    lane: Lane,
-    game_id: u64,
-    champion: u32,
-    platform_id: Region,
-    timestamp: u64,
-    // Rank: 420, Normal: 430, Random: 450
-    queue: u32,
-    role: Role,
-    season: u32,
-}
-#[derive(Debug, Deserialize)]
-#[serde(rename_all(deserialize = "SCREAMING_SNAKE_CASE"))]
-enum Lane {
-    Top,
-    Jungle,
-    Mid,
-    Bottom,
-    None,
-}
-#[derive(Debug, Deserialize)]
-#[serde(rename_all(deserialize = "SCREAMING_SNAKE_CASE"))]
-enum Region {
-    Kr,
-}
-#[derive(Debug, Deserialize)]
-#[serde(rename_all(deserialize = "SCREAMING_SNAKE_CASE"))]
-enum Role {
-    Duo,
-    DuoCarry,
-    DuoSupport,
-    Solo,
-    None,
 }
 
 const HOST: &str = "https://kr.api.riotgames.com";
@@ -73,13 +29,26 @@ fn main() -> Result<()> {
         .json::<Summoner>()?;
     let match_history = client
         .get(&format!(
-            "{}/lol/match/v4/matchlists/by-account/{}",
+            "{}/lol/match/v4/matchlists/by-account/{}?endIndex=20",
             HOST, summoner.account_id
         ))
         .header("X-Riot-Token", API_KEY)
         .send()?
         .json::<MatchHistory>()?;
-    println!("{:?}", match_history);
+
+    let mut table = Table::new();
+    table.add_row(row!["Game type", "Champion"]);
+    for match_data in match_history.matches {
+        let game_type = match match_data.queue {
+            420 => "Ranked Solo",
+            430 => "Normal",
+            440 => "Ranked Flex",
+            450 => "ARAM",
+            _ => "Unknown",
+        };
+        table.add_row(row![game_type, match_data.champion]);
+    }
+    table.printstd();
 
     Ok(())
 }
