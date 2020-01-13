@@ -1,45 +1,46 @@
-use reqwest::Result;
+use chrono::{Local, TimeZone};
+use prettytable::{cell, row, Table};
+use reqwest::{blocking::Client, Result, Url};
+use serde::de::DeserializeOwned;
 
 mod champion_map;
-use champion_map::CHAMPION_MAP;
-
 mod types;
+
+use champion_map::CHAMPION_MAP;
 use types::{Cli, MatchDetails, MatchHistory, StructOpt, Summoner};
-
-use chrono::{Local, TimeZone};
-
-use prettytable::{cell, row, Table};
 
 // Insert API key here
 const API_KEY: &str = "";
-const HOST: &str = "https://kr.api.riotgames.com";
+const HOST: &str = "https://kr.api.riotgames.com/";
 
 fn main() -> Result<()> {
     let args = Cli::from_args();
     let client = reqwest::blocking::Client::new();
 
-    let summoner = client
-        .get(&format!(
-            "{}/lol/summoner/v4/summoners/by-name/{}",
-            HOST, args.summoner_name
-        ))
-        .header("X-Riot-Token", API_KEY)
-        .send()?
-        .json::<Summoner>()?;
+    let summoner: Summoner = riot_get(
+        &client,
+        &format!("/lol/summoner/v4/summoners/by-name/{}", args.summoner_name),
+    )?;
 
-    let match_history = client
-        .get(&format!(
-            "{}/lol/match/v4/matchlists/by-account/{}?endIndex=20", //20 ?
-            HOST, summoner.account_id
-        ))
-        .header("X-Riot-Token", API_KEY)
-        .send()?
-        .json::<MatchHistory>()?;
+    let match_history: MatchHistory = riot_get(
+        &client,
+        &format!(
+            "/lol/match/v4/matchlists/by-account/{}?endIndex={}",
+            summoner.account_id, args.match_history_len
+        ),
+    )?;
 
     let mut table = Table::new();
-    table.add_row(row!["Time", "Game type", "Win Lose", "Lane", "Champion"]);
+    table.add_row(row![
+        "Id",
+        "Time",
+        "Game type",
+        "Win Lose",
+        "Lane",
+        "Champion"
+    ]);
 
-    for match_data in match_history.matches {
+    for (i, match_data) in match_history.matches.iter().enumerate() {
         let game_type = match match_data.queue {
             420 => "Ranked Solo",
             430 => "Normal",
@@ -48,38 +49,32 @@ fn main() -> Result<()> {
             _ => "Unknown",
         };
 
-        let match_details = client
-            .get(&format!(
-                "{}/lol/match/v4/matches/{}",
-                HOST, match_data.game_id
-            ))
-            .header("X-Riot-Token", API_KEY)
-            .send()?
-            .json::<MatchDetails>()?;
-
-        let mut my_index: usize = 2;
-        for participant_identities in match_details.participant_identities {
-            if remove_whitespace(&args.summoner_name)
-                == remove_whitespace(&participant_identities.player.summoner_name)
-            {
-                if participant_identities.participant_id <= 5 {
-                    my_index = 0;
-                    break;
-                } else {
-                    my_index = 1;
-                }
-            }
-        }
-        if my_index == 2 {
-            panic!("Win Lose Error");
-        }
+        let match_details: MatchDetails = riot_get(
+            &client,
+            &format!("/lol/match/v4/matches/{}", match_data.game_id),
+        )?;
+        let my_summoner_name = normalize_summoner_name(&args.summoner_name);
+        let my_participant_id = match_details
+            .participant_identities
+            .into_iter()
+            .find(|participant| {
+                normalize_summoner_name(&participant.player.summoner_name) == my_summoner_name
+            })
+            .unwrap()
+            .participant_id;
+        let team_id = match my_participant_id {
+            1..=5 => 0,
+            6..=10 => 1,
+            _ => panic!("Participant id error"),
+        };
 
         table.add_row(row![
+            i,
             Local
                 .timestamp_millis(match_data.timestamp)
                 .format("%Y-%m-%d %H:%M"),
             game_type,
-            match_details.teams[my_index].win,
+            match_details.teams[team_id].win,
             match_data.lane,
             CHAMPION_MAP.get(&match_data.champion).unwrap(),
         ]);
@@ -88,6 +83,18 @@ fn main() -> Result<()> {
 
     Ok(())
 }
-fn remove_whitespace(s: &str) -> String {
+
+fn normalize_summoner_name(s: &str) -> String {
     s.to_lowercase().split_whitespace().collect()
+}
+fn riot_get<T>(client: &Client, path: &str) -> Result<T>
+where
+    T: DeserializeOwned,
+{
+    let url = Url::parse(HOST).unwrap().join(path).unwrap();
+    client
+        .get(url)
+        .header("X-Riot-Token", API_KEY)
+        .send()?
+        .json::<T>()
 }

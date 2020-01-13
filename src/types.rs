@@ -5,6 +5,8 @@ use strum_macros::Display;
 #[derive(StructOpt)]
 pub struct Cli {
     pub summoner_name: String,
+    #[structopt(default_value = "10")]
+    pub match_history_len: usize,
 }
 #[derive(Debug, Deserialize)]
 #[serde(rename_all(deserialize = "camelCase"))]
@@ -33,27 +35,27 @@ pub struct Match {
 #[serde(rename_all(deserialize = "camelCase"))]
 pub struct MatchDetails {
     pub game_id: u64,
-    pub participant_identities: Vec<Player>,
+    pub participant_identities: Vec<Participant>,
     // pub game_type : String,
     // 1~5 player index : 0 , 6~10 player index : 1
-    pub teams: Vec<TeamDetails>,
+    pub teams: [Team; 2],
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all(deserialize = "camelCase"))]
-pub struct Player {
-    pub player: PlayerDetails,
+pub struct Participant {
+    pub player: Player,
     pub participant_id: u32,
 }
 #[derive(Debug, Deserialize)]
 #[serde(rename_all(deserialize = "camelCase"))]
-pub struct PlayerDetails {
+pub struct Player {
     pub summoner_name: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all(deserialize = "camelCase"))]
-pub struct TeamDetails {
+pub struct Team {
     pub bans: Vec<BanChampion>,
     pub win: WinLose,
 }
