@@ -64,7 +64,8 @@ pub struct Team {
 #[serde(rename_all(deserialize = "camelCase"))]
 pub struct BanChampion {
     pub pick_turn: u32,
-    pub champion_id: u32,
+    // no ban: -1 (u32 exception)
+    pub champion_id: i32,
 }
 
 #[derive(Display, Debug, Deserialize)]
